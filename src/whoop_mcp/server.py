@@ -7,6 +7,7 @@ import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -92,13 +93,31 @@ async def auth_status() -> dict[str, Any]:
             "detail": "No token file; run `uv run whoop-mcp login`.",
         }
     exp = bundle.access_token_expires_at
-    return {
-        "authenticated": True,
+    now = datetime.now(UTC)
+    expired = exp is not None and now >= exp
+    expires_in = int((exp - now).total_seconds()) if exp is not None else None
+
+    # `authenticated` must reflect whether the credentials actually work, not merely
+    # whether a token file exists on disk. Reporting True for a long-expired token
+    # sends callers chasing phantom API errors.
+    result: dict[str, Any] = {
+        "authenticated": not expired,
         "token_path": settings.token_store_path,
         "access_token_expires_at": exp.isoformat() if exp else None,
+        "access_token_expired": expired,
+        "expires_in_seconds": expires_in,
         "has_refresh_token": bundle.refresh_token is not None,
         "scope": bundle.scope,
     }
+    if expired:
+        result["detail"] = (
+            f"Access token expired at {exp.isoformat()}. If the refresh loop cannot "
+            "recover it, the refresh token was likely invalidated (WHOOP rotates "
+            "refresh tokens with no overlap window) — re-run `whoop-mcp login`."
+        )
+    elif exp is None:
+        result["detail"] = "No recorded expiry; token validity is unknown."
+    return result
 
 
 @mcp.tool()

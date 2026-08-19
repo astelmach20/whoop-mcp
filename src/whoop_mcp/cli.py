@@ -128,9 +128,8 @@ async def login_main(argv: list[str] | None = None) -> None:
 
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
-    state = secrets.token_hex(4)
-    if len(state) != 8:
-        state = "abcdefgh"
+    # WHOOP requires >= 8 chars; use full entropy rather than the 8-char minimum.
+    state = secrets.token_urlsafe(32)
     auth_url = build_authorization_url(settings, state=state)
 
     code = await asyncio.to_thread(
